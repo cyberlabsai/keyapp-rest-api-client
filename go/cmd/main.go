@@ -73,7 +73,7 @@ func main() {
 
 	// Routes
 	e.GET("/", hello)
-	e.POST("/secure-actions", secureActions)
+	e.POST("/signed-actions", signedActions)
 
 	// Start server
 	if !settings.debug {
@@ -114,7 +114,7 @@ func hello(c echo.Context) error {
 	return c.JSON(http.StatusOK, resp)
 }
 
-func secureActions(c echo.Context) error {
+func signedActions(c echo.Context) error {
 
 	jsonMap := make(map[string]interface{})
 	err := json.NewDecoder(c.Request().Body).Decode(&jsonMap)
