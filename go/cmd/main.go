@@ -1,7 +1,8 @@
 package main
 
 import (
-	"encoding/json"
+	"bytes"
+	"errors"
 	"log"
 	"net/http"
 	"os"
@@ -15,16 +16,23 @@ import (
 
 // Settings for the whole project
 type Settings struct {
-	debug  bool
-	port   string
-	domain string
-	apiKey string
+	debug     bool
+	port      string
+	domain    string
+	apiHost   string
+	apiKey    string
+	apiSecret string
 }
 
 // Response type to all requests
 type Response struct {
 	Msg       string    `json:"msg"`
 	Timestamp time.Time `json:"timestamp"`
+}
+
+// ActionToken holds the incoming token
+type ActionToken struct {
+	Token string `json:"token"`
 }
 
 var settings Settings
@@ -54,9 +62,19 @@ func loadSettings() {
 		settings.domain = "example.com"
 	}
 
+	settings.apiHost = os.Getenv("API_HOST")
+	if settings.apiHost == "" {
+		log.Fatalln("You didn't inform your api host")
+	}
+
 	settings.apiKey = os.Getenv("API_KEY")
 	if settings.apiKey == "" {
 		log.Fatalln("You didn't inform your api key")
+	}
+
+	settings.apiSecret = os.Getenv("API_SECRET")
+	if settings.apiSecret == "" {
+		log.Fatalln("You didn't inform your api secret")
 	}
 }
 
@@ -115,17 +133,32 @@ func hello(c echo.Context) error {
 }
 
 func signedActions(c echo.Context) error {
+	actionToken := &ActionToken{}
+	c.Bind(actionToken)
 
-	jsonMap := make(map[string]interface{})
-	err := json.NewDecoder(c.Request().Body).Decode(&jsonMap)
-	if err != nil {
-		return c.JSON(http.StatusBadRequest, &Response{Msg: "Bad Request", Timestamp: time.Now()})
+	if actionToken.Token == "" {
+		return errors.New("Empty token. Please provide a token in the request body")
 	}
 
-	//token, err := getToken()
+	request, _ := http.NewRequest("GET", settings.apiHost+"/apptokens", nil)
+	request.Header.Add("authorization", "Basic "+settings.apiKey+":"+settings.apiSecret)
+	request.Header.Add("token", actionToken.Token)
 
-	// TODO: ask to keyapp's public api with the token received in the header is valid
+	cli := &http.Client{}
+	resp, err := cli.Do(request)
 
-	return c.JSON(http.StatusCreated, jsonMap)
+	if err != nil {
+		return err
+	}
 
+	defer resp.Body.Close()
+	buf := new(bytes.Buffer)
+	buf.ReadFrom(resp.Body)
+	responseBody := buf.String()
+
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(resp.StatusCode, responseBody)
 }
