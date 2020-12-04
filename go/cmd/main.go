@@ -1,12 +1,16 @@
 package main
 
 import (
-	"bytes"
 	"errors"
 	"log"
 	"net/http"
 	"os"
 	"time"
+
+	"github.com/cyberlabsai/exemplo-integracao-api/settings"
+
+	"github.com/cyberlabsai/exemplo-integracao-api/actions"
+	"github.com/cyberlabsai/exemplo-integracao-api/apiclient"
 
 	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v4"
@@ -14,30 +18,17 @@ import (
 	"golang.org/x/crypto/acme/autocert"
 )
 
-// Settings for the whole project
-type Settings struct {
-	debug     bool
-	port      string
-	domain    string
-	apiHost   string
-	apiKey    string
-	apiSecret string
-}
-
 // Response type to all requests
 type Response struct {
 	Msg       string    `json:"msg"`
 	Timestamp time.Time `json:"timestamp"`
 }
 
-// ActionToken holds the incoming token
-type ActionToken struct {
-	Token string `json:"token"`
-}
+var envSettings settings.Settings
 
-var settings Settings
+func loadSettings() settings.Settings {
+	envSettings := settings.Settings{}
 
-func loadSettings() {
 	err := godotenv.Load()
 	if err != nil {
 		log.Fatal("Error loading .env file")
@@ -45,42 +36,43 @@ func loadSettings() {
 
 	debugEnv := os.Getenv("DEBUG")
 	if debugEnv == "true" || debugEnv == "TRUE" {
-		settings.debug = true
+		envSettings.Debug = true
 	} else {
-		settings.debug = false
+		envSettings.Debug = false
 	}
 
-	settings.port = os.Getenv("PORT")
-	if !settings.debug {
-		settings.port = "443"
-	} else if settings.port == "" {
-		settings.port = "1337"
+	envSettings.Port = os.Getenv("PORT")
+	if !envSettings.Debug {
+		envSettings.Port = "443"
+	} else if envSettings.Port == "" {
+		envSettings.Port = "1337"
 	}
 
-	settings.domain = os.Getenv("DOMAIN")
-	if settings.domain == "" {
-		settings.domain = "example.com"
+	envSettings.Domain = os.Getenv("DOMAIN")
+	if envSettings.Domain == "" {
+		envSettings.Domain = "example.com"
 	}
 
-	settings.apiHost = os.Getenv("API_HOST")
-	if settings.apiHost == "" {
+	envSettings.ApiHost = os.Getenv("API_HOST")
+	if envSettings.ApiHost == "" {
 		log.Fatalln("You didn't inform your api host")
 	}
 
-	settings.apiKey = os.Getenv("API_KEY")
-	if settings.apiKey == "" {
+	envSettings.ApiKey = os.Getenv("API_KEY")
+	if envSettings.ApiKey == "" {
 		log.Fatalln("You didn't inform your api key")
 	}
 
-	settings.apiSecret = os.Getenv("API_SECRET")
-	if settings.apiSecret == "" {
+	envSettings.ApiSecret = os.Getenv("API_SECRET")
+	if envSettings.ApiSecret == "" {
 		log.Fatalln("You didn't inform your api secret")
 	}
+
+	return envSettings
 }
 
 func main() {
-
-	loadSettings()
+	envSettings := loadSettings()
 
 	// Echo instance
 	e := echo.New()
@@ -94,7 +86,7 @@ func main() {
 	e.POST("/signed-actions", signedActions)
 
 	// Start server
-	if !settings.debug {
+	if !envSettings.Debug {
 
 		// Listen for HTTP requests on port 80 in a new goroutine. Use
 		// autocertManager.HTTPHandler(nil) as the handler. This will send ACME
@@ -115,11 +107,12 @@ func main() {
 
 		e.Pre(middleware.HTTPSRedirect())
 		e.AutoTLSManager.Prompt = autocert.AcceptTOS
-		e.AutoTLSManager.HostPolicy = autocert.HostWhitelist(settings.domain)
+		e.AutoTLSManager.HostPolicy = autocert.HostWhitelist(envSettings.Domain)
 		e.AutoTLSManager.Cache = autocert.DirCache("/var/www/.cache")
 		e.Logger.Fatal(e.StartAutoTLS(":443"))
 	}
-	e.Logger.Fatal(e.Start(":" + settings.port))
+
+	e.Logger.Fatal(e.Start(":" + envSettings.Port))
 }
 
 func hello(c echo.Context) error {
@@ -133,32 +126,32 @@ func hello(c echo.Context) error {
 }
 
 func signedActions(c echo.Context) error {
-	actionToken := &ActionToken{}
-	c.Bind(actionToken)
+	actionToken := &actions.ActionToken{}
 
-	if actionToken.Token == "" {
+	if err := c.Bind(actionToken); err != nil {
+		return err
+	}
+
+	if !actionToken.Valid() {
 		return errors.New("Empty token. Please provide a token in the request body")
 	}
 
-	request, _ := http.NewRequest("GET", settings.apiHost+"/apptokens", nil)
-	request.Header.Add("authorization", "Basic "+settings.apiKey+":"+settings.apiSecret)
-	request.Header.Add("token", actionToken.Token)
-
-	cli := &http.Client{}
-	resp, err := cli.Do(request)
-
-	if err != nil {
-		return err
+	cli := &apiclient.Client{
+		Settings: settings.Settings{
+			ApiHost:   os.Getenv("API_HOST"),
+			ApiKey:    os.Getenv("API_KEY"),
+			ApiSecret: os.Getenv("API_SECRET"),
+		},
+		HttpClient: &http.Client{},
 	}
 
-	defer resp.Body.Close()
-	buf := new(bytes.Buffer)
-	buf.ReadFrom(resp.Body)
-	responseBody := buf.String()
-
+	resp, err := cli.VerifyActionToken(actionToken)
 	if err != nil {
-		return err
+		return c.JSON(resp.StatusCode, map[string]string{
+			"Error": err.Error(),
+		})
 	}
 
-	return c.JSON(resp.StatusCode, responseBody)
+	body := cli.ResponseBody(resp)
+	return c.JSON(resp.StatusCode, body)
 }
