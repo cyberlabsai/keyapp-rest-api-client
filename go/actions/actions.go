@@ -9,9 +9,5 @@ type ActionToken struct {
 // As regras para uma estrutura ser válida são:
 // - Um token não vazio
 func (at *ActionToken) Valid() bool {
-	if at.Token == "" {
-		return false
-	}
-
-	return true
+	return at.Token != ""
 }

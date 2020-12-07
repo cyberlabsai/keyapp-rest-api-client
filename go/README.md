@@ -12,6 +12,12 @@ Esta aplicação demonstra como validar um token de uma requisição assinada fe
 
 Além disso, é preciso [criar uma aplicação](https://api.keyapp.ai/docs/autenticacao/#geracao-das-credenciais) que dará acesso as suas credenciais de aplicação (chave de API e o segredo).
 
+## Usando
+
+* Crie um arquivo `.env` com suas definições de variáveis de ambientes. Uma referência das variáveis pode ser encontrado em `.env-example`.
+* Para fazer build do projeto, há duas opções. Usando o Docker ou uma instalação local do Golang. Com o Golang instalado em sua máquina, baste rodar o comando `make all` e um executável será gerado na raiz do projeto.
+
+
 ### Em que momento recebo o token na requisição?
 No cadastro de sua ação assinada, uma URL de destino é fornecida. Ou seja, quando alguém executar uma ação do Portal, seja para abrir uma porta ou acenda uma luz, uma requisição HTTP irá chegar na URL cadastrada na ação. Nessa requisição, em uma header *Authorization* um token será fornecido.
 
